@@ -13,13 +13,15 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
     const [showFieldMenu, setShowFieldMenu] = useState(false);
     const fileInputRef = useRef(null);
 
-    // Sync to parent when localTask changes
+    // Sync internal state when task changes from outside (e.g. comments added by parent)
     useEffect(() => {
-        onUpdate(localTask.id, localTask);
-    }, [localTask]);
+        setLocalTask(task);
+    }, [task]);
 
     const handleUpdate = (updates) => {
-        setLocalTask(prev => ({ ...prev, ...updates }));
+        const updated = { ...localTask, ...updates };
+        setLocalTask(updated);
+        onUpdate(task.id, updated); // Sync to parent immediately
     };
 
     const handleAddChecklist = () => {
