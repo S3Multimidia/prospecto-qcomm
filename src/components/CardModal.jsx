@@ -302,7 +302,19 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
                         <Comments
                             comments={localTask.comments}
                             currentUser={currentUser}
-                            onAddComment={(text) => onAddComment(localTask.id, text)}
+                            onAddComment={(text) => {
+                                const newComment = {
+                                    id: `comm-${uuidv4()}`,
+                                    text,
+                                    authorId: currentUser?.email,
+                                    authorName: currentUser?.name,
+                                    authorAvatar: currentUser?.avatar,
+                                    createdAt: new Date().toISOString()
+                                };
+                                handleUpdate({
+                                    comments: [...(localTask.comments || []), newComment]
+                                });
+                            }}
                         />
                     </div>
 

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable } from '@hello-pangea/dnd';
-import { Search, LayoutDashboard } from 'lucide-react';
+import { Search, LayoutDashboard, Sparkles } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import Board from './components/Board';
 import CardModal from './components/CardModal';
 import Login from './components/Login';
+import SmartImportModal from './components/SmartImportModal';
 import { INITIAL_DATA } from './data/initialData';
 import { db } from './lib/firebase';
 import {
@@ -27,6 +28,7 @@ function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTask, setActiveTask] = useState(null);
+  const [showSmartImport, setShowSmartImport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem('kanban-user');
@@ -295,6 +297,92 @@ function App() {
     setActiveTask({ ...newTask, customFields: [] });
   };
 
+  const handleSmartImportTasks = async (parsedData) => {
+    const firstColumnId = data.columnOrder[0];
+    const firstColumn = data.columns[firstColumnId];
+
+    if (!firstColumnId) {
+      alert('Crie pelo menos uma fila antes de importar.');
+      return;
+    }
+
+    const newTasksObj = {};
+    const newTaskIds = [];
+    const firestorePromises = [];
+
+    parsedData.forEach(item => {
+      const taskId = `task-${uuidv4()}`;
+
+      const customFields = [];
+      if (item.email) customFields.push({ id: `cf-${uuidv4()}`, label: 'E-mail', type: 'text', value: item.email });
+      if (item.phone) customFields.push({ id: `cf-${uuidv4()}`, label: 'Telefone', type: 'text', value: item.phone });
+      if (item.social) customFields.push({ id: `cf-${uuidv4()}`, label: 'LinkedIn/Redes', type: 'text', value: item.social });
+
+      const comments = [];
+      if (item.notes) {
+        comments.push({
+          id: `comm-${uuidv4()}`,
+          text: `[Importação IA]: ${item.notes}`,
+          authorId: currentUser.email,
+          authorName: 'IA System',
+          authorAvatar: '🤖',
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      const newTask = {
+        id: taskId,
+        company: item.company || 'Empresa Desconhecida',
+        contact: item.contact || '',
+        createdAt: new Date().toISOString(),
+        history: [{ columnId: firstColumnId, enteredAt: new Date().toISOString() }],
+        checklist: [],
+        customFields,
+        attachments: [],
+        comments,
+        column_id: firstColumnId,
+        position: newTaskIds.length // Puts it at the start conceptually (we'll reverse prepend later)
+      };
+
+      newTasksObj[taskId] = newTask;
+      newTaskIds.push(taskId);
+
+      firestorePromises.push(
+        setDoc(doc(db, 'kanban_tasks', taskId), {
+          company: newTask.company,
+          contact: newTask.contact,
+          column_id: firstColumnId,
+          position: 0,
+          checklist: newTask.checklist,
+          custom_fields: newTask.customFields,
+          attachments: newTask.attachments,
+          history: newTask.history,
+          comments: newTask.comments,
+          created_at: newTask.createdAt,
+          creator_email: currentUser.email
+        })
+      );
+    });
+
+    setData(prev => ({
+      ...prev,
+      tasks: {
+        ...prev.tasks,
+        ...newTasksObj
+      },
+      columns: {
+        ...prev.columns,
+        [firstColumnId]: {
+          ...firstColumn,
+          taskIds: [...newTaskIds, ...firstColumn.taskIds] // Prepend all new tasks
+        }
+      }
+    }));
+
+    await Promise.all(firestorePromises);
+    alert(`${parsedData.length} empresas importadas com sucesso!`);
+  };
+
   const duplicateTask = async (task) => {
     const currentColumnId = task.history[task.history.length - 1].columnId;
     const currentColumn = data.columns[currentColumnId];
@@ -471,6 +559,9 @@ function App() {
               </button>
             </div>
           </div>
+          <button className="btn btn-primary" style={{ backgroundColor: 'var(--success-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }} onClick={() => setShowSmartImport(true)}>
+            <Sparkles size={16} /> Importar IA
+          </button>
           <button className="btn btn-secondary" onClick={addColumn}>+ Nova Fila</button>
           <button className="btn btn-primary" onClick={addTask}>+ Novo Lead</button>
         </div>
@@ -523,6 +614,12 @@ function App() {
           columns={data.columns}
         />
       )}
+
+      <SmartImportModal
+        isOpen={showSmartImport}
+        onClose={() => setShowSmartImport(false)}
+        onImport={handleSmartImportTasks}
+      />
     </div>
   );
 }
