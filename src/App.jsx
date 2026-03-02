@@ -10,21 +10,17 @@ import { INITIAL_DATA } from './data/initialData';
 import { db } from './lib/firebase';
 import {
   collection,
-  getDocs,
   doc,
   setDoc,
   updateDoc,
   deleteDoc,
   query,
-  orderBy
+  orderBy,
+  onSnapshot
 } from 'firebase/firestore';
 
 function App() {
-  const [data, setData] = useState(() => {
-    const saved = localStorage.getItem('kanban-data');
-    if (saved) return JSON.parse(saved);
-    return INITIAL_DATA;
-  });
+  const [data, setData] = useState({ tasks: {}, columns: {}, columnOrder: [] });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTask, setActiveTask] = useState(null);
@@ -35,24 +31,20 @@ function App() {
     return savedUser ? JSON.parse(savedUser) : null;
   });
 
+  // Real-time listener — sincroniza todos os usuários automaticamente
   useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
     setLoading(true);
-    try {
-      // Fetch columns
-      const colRef = collection(db, 'kanban_columns');
-      const colQuery = query(colRef, orderBy('position', 'asc'));
-      const colSnap = await getDocs(colQuery);
-      const cols = colSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // Fetch tasks
-      const taskRef = collection(db, 'kanban_tasks');
-      const taskQuery = query(taskRef, orderBy('position', 'asc'));
-      const taskSnap = await getDocs(taskQuery);
-      const tks = taskSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const colQuery = query(collection(db, 'kanban_columns'), orderBy('position', 'asc'));
+    const taskQuery = query(collection(db, 'kanban_tasks'), orderBy('position', 'asc'));
+
+    let cols = [];
+    let tks = [];
+    let colsReady = false;
+    let tksReady = false;
+
+    const rebuild = () => {
+      if (!colsReady || !tksReady) return;
 
       if (cols.length > 0) {
         const columns = {};
@@ -62,29 +54,48 @@ function App() {
         cols.forEach(c => {
           columns[c.id] = {
             ...c,
-            taskIds: tks.filter(t => t.column_id === c.id).map(t => t.id)
+            taskIds: tks
+              .filter(t => t.column_id === c.id)
+              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+              .map(t => t.id)
           };
         });
 
         tks.forEach(t => {
-          tasks[t.id] = {
-            ...t,
-            columnId: t.column_id
-          };
+          tasks[t.id] = { ...t, columnId: t.column_id, customFields: t.custom_fields || [] };
         });
 
         setData({ tasks, columns, columnOrder });
       } else {
         setData(INITIAL_DATA);
       }
-    } catch (error) {
-      console.error('Erro ao carregar dados do Firebase:', error);
-      const saved = localStorage.getItem('kanban-data');
-      if (saved) setData(JSON.parse(saved));
-    } finally {
       setLoading(false);
-    }
-  };
+    };
+
+    const unsubCols = onSnapshot(colQuery, (snap) => {
+      cols = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      colsReady = true;
+      rebuild();
+    }, (err) => {
+      console.error('Erro ao ouvir colunas:', err);
+      setLoading(false);
+    });
+
+    const unsubTasks = onSnapshot(taskQuery, (snap) => {
+      tks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      tksReady = true;
+      rebuild();
+    }, (err) => {
+      console.error('Erro ao ouvir tasks:', err);
+      setLoading(false);
+    });
+
+    // Cleanup listeners on unmount
+    return () => {
+      unsubCols();
+      unsubTasks();
+    };
+  }, []);
 
   useEffect(() => {
     if (currentUser) {
