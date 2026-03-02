@@ -429,6 +429,34 @@ function App() {
     setActiveTask(newTask);
   };
 
+  const deleteTask = async (taskId) => {
+    const task = data.tasks[taskId];
+    if (!task) return;
+
+    // Find which column contains this task
+    const columnId = Object.keys(data.columns).find(colId =>
+      data.columns[colId].taskIds.includes(taskId)
+    );
+
+    setData(prev => {
+      const newTasks = { ...prev.tasks };
+      delete newTasks[taskId];
+
+      const newColumns = { ...prev.columns };
+      if (columnId) {
+        newColumns[columnId] = {
+          ...newColumns[columnId],
+          taskIds: newColumns[columnId].taskIds.filter(id => id !== taskId)
+        };
+      }
+
+      return { ...prev, tasks: newTasks, columns: newColumns };
+    });
+
+    setActiveTask(null);
+    await deleteDoc(doc(db, 'kanban_tasks', taskId));
+  };
+
   const updateColumn = async (columnId, updates) => {
     setData(prev => ({
       ...prev,
@@ -611,6 +639,7 @@ function App() {
           onUpdate={updateTask}
           onDuplicate={duplicateTask}
           onAddComment={addComment}
+          onDelete={deleteTask}
           columns={data.columns}
         />
       )}

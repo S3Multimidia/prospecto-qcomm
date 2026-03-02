@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import Comments from './Comments';
 
-export default function CardModal({ task, currentUser, onClose, onUpdate, onDuplicate, onAddComment, columns }) {
+export default function CardModal({ task, currentUser, onClose, onUpdate, onDuplicate, onAddComment, onDelete, columns }) {
     const [localTask, setLocalTask] = useState(task);
     const [showFieldMenu, setShowFieldMenu] = useState(false);
     const fileInputRef = useRef(null);
@@ -141,6 +141,20 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
                         >
                             <Copy size={18} />
                             Duplicar
+                        </button>
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => {
+                                if (window.confirm(`Tem certeza que deseja excluir o card "${localTask.company}"? Esta ação não pode ser desfeita.`)) {
+                                    onDelete(localTask.id);
+                                    onClose();
+                                }
+                            }}
+                            title="Excluir card"
+                            style={{ padding: '0.5rem 0.75rem', backgroundColor: '#fef2f2', color: 'var(--danger-color)', border: '1px solid #fecaca' }}
+                        >
+                            <Trash2 size={18} />
+                            Excluir
                         </button>
                         <button className="modal-close" onClick={onClose}><X size={20} /></button>
                     </div>
