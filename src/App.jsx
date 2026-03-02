@@ -38,18 +38,18 @@ function App() {
 
     const colQuery = query(collection(db, 'kanban_columns'), orderBy('position', 'asc'));
     const taskQuery = query(collection(db, 'kanban_tasks'), orderBy('position', 'asc'));
+    const initMarkerRef = doc(db, 'settings', 'kanban_initialized');
 
     let cols = [];
     let tks = [];
     let colsReady = false;
     let tksReady = false;
-    let initialized = false;
 
-    const rebuild = () => {
+    const rebuild = async () => {
       if (!colsReady || !tksReady) return;
 
       if (cols.length > 0) {
-        initialized = true;
+        // Tem dados no Firestore: monta o board
         const columns = {};
         const tasks = {};
         const columnOrder = cols.map(c => c.id);
@@ -77,13 +77,18 @@ function App() {
         });
 
         setData({ tasks, columns, columnOrder });
-      } else if (!initialized) {
-        // Primeiro load com DB vazio: usa dados iniciais
-        initialized = true;
-        setData(INITIAL_DATA);
+        // Marca que o banco já foi inicializado
+        setDoc(initMarkerRef, { initialized: true }, { merge: true }).catch(() => { });
       } else {
-        // Usuário apagou tudo: board deve ficar vazio
-        setData({ tasks: {}, columns: {}, columnOrder: [] });
+        // Banco vazio: verifica se já foi inicializado antes
+        const markerSnap = await getDoc(initMarkerRef);
+        if (markerSnap.exists() && markerSnap.data().initialized) {
+          // Já foi inicializado antes — o usuário apagou tudo. Respeitar.
+          setData({ tasks: {}, columns: {}, columnOrder: [] });
+        } else {
+          // Primeiro acesso real: semear dados iniciais
+          setData(INITIAL_DATA);
+        }
       }
       setLoading(false);
     };
