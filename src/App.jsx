@@ -62,7 +62,15 @@ function App() {
         });
 
         tks.forEach(t => {
-          tasks[t.id] = { ...t, columnId: t.column_id, customFields: t.custom_fields || [] };
+          tasks[t.id] = {
+            ...t,
+            columnId: t.column_id,
+            customFields: t.custom_fields || [],
+            description: t.description || '',
+            attachments: t.attachments || [],
+            checklist: t.checklist || [],
+            comments: t.comments || []
+          };
         });
 
         setData({ tasks, columns, columnOrder });
@@ -230,6 +238,7 @@ function App() {
     await updateDoc(doc(db, 'kanban_tasks', taskId), {
       company: dbTask.company,
       contact: dbTask.contact,
+      description: dbTask.description || '',
       checklist: dbTask.checklist,
       custom_fields: dbTask.customFields,
       attachments: dbTask.attachments,

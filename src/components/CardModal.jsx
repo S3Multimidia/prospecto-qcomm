@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
     X, CheckSquare, ListPlus, FilePlus, Paperclip,
-    Trash2, Image as ImageIcon, FileText, FileSpreadsheet, Plus, DownloadCloud, History, Copy
+    Trash2, Image as ImageIcon, FileText, FileSpreadsheet, Plus, DownloadCloud, History, Copy, AlignLeft
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
@@ -99,7 +99,7 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
                 name: file.name,
                 size: (file.size / 1024).toFixed(1) + ' KB',
                 type: file.type,
-                // In reality, this would be an uploaded URL
+                addedAt: new Date().toISOString(),
                 url: file.type.includes('image') ? URL.createObjectURL(file) : null
             };
         });
@@ -163,9 +163,32 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
                 <div className="modal-body">
                     {/* Main Column */}
                     <div className="modal-main">
+
+                        {/* Description Section */}
+                        <div className="section-title">
+                            <AlignLeft size={16} /> Descrição
+                        </div>
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <textarea
+                                className="form-input"
+                                style={{
+                                    resize: 'vertical',
+                                    minHeight: '90px',
+                                    fontFamily: 'var(--font-family)',
+                                    lineHeight: 1.6,
+                                    fontSize: '0.875rem'
+                                }}
+                                placeholder="Adicione uma descrição mais detalhada sobre este prospecto..."
+                                value={localTask.description || ''}
+                                onChange={(e) => handleUpdate({ description: e.target.value })}
+                            />
+                        </div>
+
+                        <hr style={{ border: 0, borderTop: '1px solid var(--border-subtle)', margin: '1.5rem 0' }} />
+
                         {/* Checklist Section */}
                         <div className="section-title">
-                            <CheckSquare size={18} /> Checklist
+                            <CheckSquare size={16} /> Checklist
                         </div>
 
                         {totalCount > 0 && (
@@ -264,11 +287,20 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
                             ))}
                         </div>
 
-                        <hr style={{ border: 0, borderTop: '1px solid var(--border-color)', margin: '2rem 0' }} />
+                        <hr style={{ border: 0, borderTop: '1px solid var(--border-subtle)', margin: '1.5rem 0' }} />
 
                         {/* Attachments Section */}
-                        <div className="section-title">
-                            <Paperclip size={18} /> Arquivos e Anexos
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                            <div className="section-title" style={{ margin: 0 }}>
+                                <Paperclip size={16} /> Anexos
+                            </div>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => fileInputRef.current?.click()}
+                                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+                            >
+                                <Plus size={14} /> Adicionar
+                            </button>
                         </div>
 
                         <input
@@ -279,16 +311,17 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
                             onChange={handleFileUpload}
                         />
 
-                        <div
-                            className="upload-zone"
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            <DownloadCloud size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
-                            <p style={{ fontWeight: 500, color: 'var(--text-dark)' }}>Clique para fazer upload ou arraste arquivos aqui</p>
-                            <p style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>Suporta JPG, PNG, PDF, XLSX, DOCX</p>
-                        </div>
-
-                        {localTask.attachments.length > 0 && (
+                        {localTask.attachments.length === 0 ? (
+                            <div
+                                className="upload-zone"
+                                onClick={() => fileInputRef.current?.click()}
+                                style={{ padding: '1rem', marginBottom: '0.5rem' }}
+                            >
+                                <DownloadCloud size={28} style={{ margin: '0 auto 0.5rem', opacity: 0.4 }} />
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Arraste arquivos aqui ou clique em Adicionar</p>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>JPG, PNG, PDF, XLSX, DOCX</p>
+                            </div>
+                        ) : (
                             <div className="attachment-list">
                                 {localTask.attachments.map(file => (
                                     <div key={file.id} className="attachment-item">
@@ -301,10 +334,15 @@ export default function CardModal({ task, currentUser, onClose, onUpdate, onDupl
                                         </div>
                                         <div className="attachment-info">
                                             <div className="attachment-name" title={file.name}>{file.name}</div>
-                                            <div className="attachment-size">{file.size}</div>
+                                            <div className="attachment-size">
+                                                {file.size}
+                                                {file.addedAt && (
+                                                    <> · Adicionado em {format(new Date(file.addedAt), "dd 'de' MMM', ' HH:mm", { locale: ptBR })}</>
+                                                )}
+                                            </div>
                                         </div>
-                                        <button className="btn btn-ghost" onClick={() => handleDeleteAttachment(file.id)}>
-                                            <Trash2 size={16} />
+                                        <button className="btn btn-ghost" onClick={() => handleDeleteAttachment(file.id)} title="Remover">
+                                            <Trash2 size={15} />
                                         </button>
                                     </div>
                                 ))}
