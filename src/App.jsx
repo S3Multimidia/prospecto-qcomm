@@ -6,7 +6,17 @@ import Board from './components/Board';
 import CardModal from './components/CardModal';
 import Login from './components/Login';
 import { INITIAL_DATA } from './data/initialData';
-import { supabase } from './lib/supabase';
+import { db } from './lib/firebase';
+import {
+  collection,
+  getDocs,
+  doc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy
+} from 'firebase/firestore';
 
 function App() {
   const [data, setData] = useState(() => {
@@ -31,22 +41,18 @@ function App() {
     setLoading(true);
     try {
       // Fetch columns
-      const { data: cols, error: colsError } = await supabase
-        .from('kanban_columns')
-        .select('*')
-        .order('position', { ascending: true });
-
-      if (colsError) throw colsError;
+      const colRef = collection(db, 'kanban_columns');
+      const colQuery = query(colRef, orderBy('position', 'asc'));
+      const colSnap = await getDocs(colQuery);
+      const cols = colSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
       // Fetch tasks
-      const { data: tks, error: tksError } = await supabase
-        .from('kanban_tasks')
-        .select('*')
-        .order('position', { ascending: true });
+      const taskRef = collection(db, 'kanban_tasks');
+      const taskQuery = query(taskRef, orderBy('position', 'asc'));
+      const taskSnap = await getDocs(taskQuery);
+      const tks = taskSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      if (tksError) throw tksError;
-
-      if (cols && cols.length > 0) {
+      if (cols.length > 0) {
         const columns = {};
         const tasks = {};
         const columnOrder = cols.map(c => c.id);
@@ -61,18 +67,16 @@ function App() {
         tks.forEach(t => {
           tasks[t.id] = {
             ...t,
-            columnId: t.column_id // mapped for internal use
+            columnId: t.column_id
           };
         });
 
         setData({ tasks, columns, columnOrder });
       } else {
-        // If DB is empty, use initial data (optional: seed DB)
         setData(INITIAL_DATA);
       }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      // Fallback to localStorage if error
+      console.error('Erro ao carregar dados do Firebase:', error);
       const saved = localStorage.getItem('kanban-data');
       if (saved) setData(JSON.parse(saved));
     } finally {
@@ -110,7 +114,7 @@ function App() {
 
       // Persist column order
       const updates = newColumnOrder.map((id, index) =>
-        supabase.from('kanban_columns').update({ position: index }).eq('id', id)
+        updateDoc(doc(db, 'kanban_columns', id), { position: index })
       );
       await Promise.all(updates);
       return;
@@ -139,7 +143,7 @@ function App() {
 
       // Persist task order in same column
       const updates = newTaskIds.map((id, index) =>
-        supabase.from('kanban_tasks').update({ position: index }).eq('id', id)
+        updateDoc(doc(db, 'kanban_tasks', id), { position: index })
       );
       await Promise.all(updates);
       return;
@@ -181,17 +185,17 @@ function App() {
     });
 
     // Persist task movement to another column
-    await supabase.from('kanban_tasks').update({
+    await updateDoc(doc(db, 'kanban_tasks', draggableId), {
       column_id: newFinish.id,
       history: newHistory
-    }).eq('id', draggableId);
+    });
 
     // Update positions in both columns
     const startUpdates = startTaskIds.map((id, index) =>
-      supabase.from('kanban_tasks').update({ position: index }).eq('id', id)
+      updateDoc(doc(db, 'kanban_tasks', id), { position: index })
     );
     const finishUpdates = finishTaskIds.map((id, index) =>
-      supabase.from('kanban_tasks').update({ position: index }).eq('id', id)
+      updateDoc(doc(db, 'kanban_tasks', id), { position: index })
     );
     await Promise.all([...startUpdates, ...finishUpdates]);
   };
@@ -208,9 +212,9 @@ function App() {
       setActiveTask(updatedTask);
     }
 
-    // Persist to Supabase
-    const { id, columnId, ...dbTask } = updatedTask; // remove helper fields
-    await supabase.from('kanban_tasks').update({
+    // Persist to Firebase
+    const { id, columnId, ...dbTask } = updatedTask;
+    await updateDoc(doc(db, 'kanban_tasks', taskId), {
       company: dbTask.company,
       contact: dbTask.contact,
       checklist: dbTask.checklist,
@@ -218,7 +222,7 @@ function App() {
       attachments: dbTask.attachments,
       comments: dbTask.comments,
       history: dbTask.history
-    }).eq('id', taskId);
+    });
   };
 
   const addComment = async (taskId, text) => {
@@ -273,9 +277,8 @@ function App() {
       }
     }));
 
-    // Persist to Supabase
-    await supabase.from('kanban_tasks').insert([{
-      id: newTask.id,
+    // Persist to Firebase
+    await setDoc(doc(db, 'kanban_tasks', newTask.id), {
       company: newTask.company,
       contact: newTask.contact,
       column_id: firstColumnId,
@@ -285,8 +288,9 @@ function App() {
       attachments: [],
       history: newTask.history,
       comments: [],
+      created_at: newTask.createdAt,
       creator_email: currentUser.email
-    }]);
+    });
 
     setActiveTask({ ...newTask, customFields: [] });
   };
@@ -319,9 +323,8 @@ function App() {
       }
     }));
 
-    // Persist to Supabase
-    await supabase.from('kanban_tasks').insert([{
-      id: newTask.id,
+    // Persist to Firebase
+    await setDoc(doc(db, 'kanban_tasks', newTask.id), {
       company: newTask.company,
       contact: newTask.contact,
       column_id: currentColumnId,
@@ -331,8 +334,9 @@ function App() {
       attachments: newTask.attachments,
       history: newTask.history,
       comments: newTask.comments,
+      created_at: newTask.createdAt,
       creator_email: currentUser.email
-    }]);
+    });
 
     setActiveTask(newTask);
   };
@@ -349,7 +353,7 @@ function App() {
       }
     }));
 
-    // Persist to Supabase
+    // Persist to Firebase
     const dbUpdates = {};
     if (updates.title) dbUpdates.title = updates.title;
     if (updates.color) dbUpdates.color = updates.color;
@@ -357,7 +361,7 @@ function App() {
     if (updates.coverText !== undefined) dbUpdates.cover_text = updates.coverText;
 
     if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from('kanban_columns').update(dbUpdates).eq('id', columnId);
+      await updateDoc(doc(db, 'kanban_columns', columnId), dbUpdates);
     }
   };
 
@@ -381,13 +385,12 @@ function App() {
       columnOrder: [...prev.columnOrder, newColumnId]
     }));
 
-    // Persist to Supabase
-    await supabase.from('kanban_columns').insert([{
-      id: newColumnId,
+    // Persist to Firebase
+    await setDoc(doc(db, 'kanban_columns', newColumnId), {
       title: newColumn.title,
       color: newColumn.color,
       position
-    }]);
+    });
   };
 
   const deleteColumn = async (columnId) => {
@@ -416,8 +419,11 @@ function App() {
       };
     });
 
-    // Persist to Supabase
-    await supabase.from('kanban_columns').delete().eq('id', columnId);
+    // Persist to Firebase
+    await deleteDoc(doc(db, 'kanban_columns', columnId));
+    // Also delete tasks (or they will be orphans, Firestore doesn't have cascade delete by default)
+    const taskUpdates = column.taskIds.map(id => deleteDoc(doc(db, 'kanban_tasks', id)));
+    await Promise.all(taskUpdates);
   };
 
   if (!currentUser) {
