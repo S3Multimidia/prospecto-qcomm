@@ -16,7 +16,8 @@ import {
   deleteDoc,
   query,
   orderBy,
-  onSnapshot
+  onSnapshot,
+  getDoc
 } from 'firebase/firestore';
 
 function App() {
@@ -42,11 +43,13 @@ function App() {
     let tks = [];
     let colsReady = false;
     let tksReady = false;
+    let initialized = false;
 
     const rebuild = () => {
       if (!colsReady || !tksReady) return;
 
       if (cols.length > 0) {
+        initialized = true;
         const columns = {};
         const tasks = {};
         const columnOrder = cols.map(c => c.id);
@@ -74,8 +77,13 @@ function App() {
         });
 
         setData({ tasks, columns, columnOrder });
-      } else {
+      } else if (!initialized) {
+        // Primeiro load com DB vazio: usa dados iniciais
+        initialized = true;
         setData(INITIAL_DATA);
+      } else {
+        // Usuário apagou tudo: board deve ficar vazio
+        setData({ tasks: {}, columns: {}, columnOrder: [] });
       }
       setLoading(false);
     };

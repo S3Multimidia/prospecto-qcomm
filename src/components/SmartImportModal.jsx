@@ -1,26 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Settings, FileText, AlertCircle } from 'lucide-react';
+import { X, Sparkles, Settings, FileText, AlertCircle, Check } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+const SETTINGS_DOC = 'settings/global';
 
 export default function SmartImportModal({ isOpen, onClose, onImport }) {
     const [apiKey, setApiKey] = useState('');
     const [inputText, setInputText] = useState('');
     const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
-    const [activeTab, setActiveTab] = useState('import'); // 'import' or 'settings'
+    const [saved, setSaved] = useState(false);
+    const [activeTab, setActiveTab] = useState('import');
 
+    // Load API key from Firestore (global, shared between all users)
     useEffect(() => {
-        const storedKey = localStorage.getItem('gemini-api-key');
-        if (storedKey) {
-            setApiKey(storedKey);
-        } else {
-            // Default key provided by user
-            setApiKey('AIzaSyCYtkDi5jlJkislCTCpvBigc3hF_k0nles');
-        }
+        if (!isOpen) return;
+        getDoc(doc(db, ...SETTINGS_DOC.split('/'))).then(snap => {
+            if (snap.exists() && snap.data().geminiApiKey) {
+                setApiKey(snap.data().geminiApiKey);
+            }
+        });
     }, [isOpen]);
 
-    const handleSaveKey = () => {
-        localStorage.setItem('gemini-api-key', apiKey);
-        setActiveTab('import');
+    const handleSaveKey = async () => {
+        setSaving(true);
+        setSaved(false);
+        try {
+            await setDoc(doc(db, ...SETTINGS_DOC.split('/')), { geminiApiKey: apiKey }, { merge: true });
+            setSaved(true);
+            setTimeout(() => {
+                setSaved(false);
+                setActiveTab('import');
+            }, 1200);
+        } catch (err) {
+            setError('Erro ao salvar a chave no Firestore: ' + err.message);
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleProcess = async () => {
@@ -29,7 +47,7 @@ export default function SmartImportModal({ isOpen, onClose, onImport }) {
             return;
         }
         if (!apiKey.trim()) {
-            setError('A Chave da API não está configurada.');
+            setError('A Chave da API não está configurada. Configure na aba "Configurações de API".');
             setActiveTab('settings');
             return;
         }
@@ -42,14 +60,8 @@ export default function SmartImportModal({ isOpen, onClose, onImport }) {
 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey.trim()}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{ text: prompt }]
-                    }]
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
 
             if (!response.ok) {
@@ -59,24 +71,17 @@ export default function SmartImportModal({ isOpen, onClose, onImport }) {
 
             const data = await response.json();
             let aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-            // Clean up possible markdown tags
             aiText = aiText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
             let parsedData;
             try {
                 parsedData = JSON.parse(aiText);
-                if (!Array.isArray(parsedData)) {
-                    parsedData = [parsedData]; // Wrap in array if object
-                }
-            } catch (jsonError) {
-                console.error('Raw AI response:', aiText);
+                if (!Array.isArray(parsedData)) parsedData = [parsedData];
+            } catch {
                 throw new Error('A IA não retornou um JSON válido. Tente formatar os dados de entrada com mais clareza.');
             }
 
-            if (parsedData.length === 0) {
-                throw new Error('Nenhuma empresa foi encontrada no texto enviado.');
-            }
+            if (parsedData.length === 0) throw new Error('Nenhuma empresa foi encontrada no texto enviado.');
 
             onImport(parsedData);
             setInputText('');
@@ -92,69 +97,71 @@ export default function SmartImportModal({ isOpen, onClose, onImport }) {
 
     if (!isOpen) return null;
 
+    const tabStyle = (tab) => ({
+        flex: 1, padding: '0.875rem', background: activeTab === tab ? 'white' : 'transparent',
+        border: 'none', borderBottom: activeTab === tab ? '2px solid var(--primary-color)' : '2px solid transparent',
+        fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+        color: activeTab === tab ? 'var(--primary-color)' : 'var(--text-secondary)',
+        transition: 'all 0.15s ease', fontFamily: 'var(--font-family)'
+    });
+
     return (
         <div className="modal-overlay" onMouseDown={onClose} style={{ zIndex: 1100 }}>
-            <div className="modal-content" style={{ maxWidth: '600px' }} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-content" style={{ maxWidth: '580px' }} onMouseDown={(e) => e.stopPropagation()}>
                 <div className="modal-header">
-                    <div className="modal-title-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Sparkles className="text-primary" />
-                        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-dark)', margin: 0 }}>Importação Inteligente</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Sparkles size={20} color="var(--primary-color)" />
+                        <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-dark)', margin: 0, letterSpacing: '-0.01em' }}>Importação Inteligente</h2>
                     </div>
                     <button className="modal-close" onClick={onClose} disabled={loading}><X size={20} /></button>
                 </div>
 
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)' }}>
-                    <button
-                        style={{ flex: 1, padding: '1rem', background: activeTab === 'import' ? 'white' : 'transparent', border: 'none', borderBottom: activeTab === 'import' ? '2px solid var(--primary-color)' : '2px solid transparent', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: activeTab === 'import' ? 'var(--primary-color)' : 'var(--text-secondary)' }}
-                        onClick={() => setActiveTab('import')}
-                    >
-                        <FileText size={18} /> Importar Dados
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-app)' }}>
+                    <button style={tabStyle('import')} onClick={() => setActiveTab('import')}>
+                        <FileText size={15} /> Importar Dados
                     </button>
-                    <button
-                        style={{ flex: 1, padding: '1rem', background: activeTab === 'settings' ? 'white' : 'transparent', border: 'none', borderBottom: activeTab === 'settings' ? '2px solid var(--primary-color)' : '2px solid transparent', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: activeTab === 'settings' ? 'var(--primary-color)' : 'var(--text-secondary)' }}
-                        onClick={() => setActiveTab('settings')}
-                    >
-                        <Settings size={18} /> Configurações de API
+                    <button style={tabStyle('settings')} onClick={() => setActiveTab('settings')}>
+                        <Settings size={15} /> API Global
                     </button>
                 </div>
 
-                <div className="modal-body" style={{ display: 'block', padding: '1.5rem 2rem' }}>
+                <div style={{ padding: '1.5rem' }}>
                     {error && (
-                        <div style={{ backgroundColor: '#fef2f2', color: 'var(--danger-color)', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.875rem' }}>
-                            <AlertCircle size={16} style={{ marginTop: '0.125rem', flexShrink: 0 }} />
+                        <div style={{ background: 'var(--danger-subtle)', color: 'var(--danger-color)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.8125rem' }}>
+                            <AlertCircle size={15} style={{ marginTop: '0.125rem', flexShrink: 0 }} />
                             <span>{error}</span>
                         </div>
                     )}
 
                     {activeTab === 'import' ? (
                         <div>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                                Cole um texto livre ou um arquivo CSV. A inteligência artificial vai extrair automaticamente o nome das empresas, contatos, telefones e e-mails, e criará os cards na sua primeira fila.
+                            <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+                                Cole um texto livre ou dados copiados. A IA extrai empresas, contatos, telefones, e-mails e redes sociais — criando os cards automaticamente na primeira fila.
                             </p>
                             <textarea
                                 className="form-input"
-                                style={{ height: '200px', resize: 'vertical', fontFamily: 'monospace', fontSize: '0.875rem' }}
-                                placeholder="Exemplo: \nEmpresa X, Contato: João, Tel: 1199999999, joao@empresax.com\nEmpresa Y, Falar com a Maria, maria@y.com"
+                                style={{ height: '200px', resize: 'vertical', fontFamily: 'monospace', fontSize: '0.8125rem', lineHeight: 1.6 }}
+                                placeholder={"Exemplo:\nGerdau, Pedro Torres (Diretor), inform@gerdau.com, LinkedIn: linkedin.com/..."}
                                 value={inputText}
                                 onChange={(e) => setInputText(e.target.value)}
                                 disabled={loading}
                             />
-
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', gap: '1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', gap: '0.75rem' }}>
                                 <button className="btn btn-secondary" onClick={onClose} disabled={loading}>Cancelar</button>
-                                <button className="btn btn-primary" onClick={handleProcess} disabled={loading}>
+                                <button className="btn btn-primary" onClick={handleProcess} disabled={loading} style={{ minWidth: '140px' }}>
                                     {loading ? (
-                                        <><div className="spinner" style={{ width: '16px', height: '16px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div> Processando IA...</>
+                                        <><div style={{ width: '14px', height: '14px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div> Processando...</>
                                     ) : (
-                                        <><Sparkles size={16} /> Processar com IA</>
+                                        <><Sparkles size={15} /> Processar com IA</>
                                     )}
                                 </button>
                             </div>
                         </div>
                     ) : (
                         <div>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                                Insira e gerencie sua chave da API do Google Gemini para habilitar a importação inteligente.
+                            <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+                                A chave é salva no Firestore e <strong>compartilhada entre todos os usuários</strong>. Apenas uma configuração necessária para toda a equipe.
                             </p>
                             <div className="form-group">
                                 <label className="form-label">Google Gemini API Key</label>
@@ -165,18 +172,24 @@ export default function SmartImportModal({ isOpen, onClose, onImport }) {
                                     value={apiKey}
                                     onChange={(e) => setApiKey(e.target.value)}
                                 />
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                                    Obtenha sua chave gratuita em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)' }}>aistudio.google.com/apikey</a>
+                                </p>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-                                <button className="btn btn-primary" onClick={handleSaveKey}>Salvar Chave</button>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleSaveKey}
+                                    disabled={saving || !apiKey.trim()}
+                                    style={{ minWidth: '130px', background: saved ? 'var(--success-color)' : '' }}
+                                >
+                                    {saved ? <><Check size={15} /> Salvo!</> : saving ? 'Salvando...' : 'Salvar para Todos'}
+                                </button>
                             </div>
                         </div>
                     )}
                 </div>
-                {/* Add simple inline style for spinner animation if not present globally */}
-                <style dangerouslySetInnerHTML={{
-                    __html: `
-                    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                `}} />
+                <style dangerouslySetInnerHTML={{ __html: `@keyframes spin { to { transform: rotate(360deg); } }` }} />
             </div>
         </div>
     );
