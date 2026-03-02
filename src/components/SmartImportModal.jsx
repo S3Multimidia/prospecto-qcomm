@@ -40,7 +40,7 @@ export default function SmartImportModal({ isOpen, onClose, onImport }) {
         try {
             const prompt = `Você é um assistente de CRM especialista em extrair dados de prospectos. Analise o texto a seguir (que pode ser CSV, texto livre ou tabela copiada) e extraia a lista de empresas e contatos. Retorne ESTRITAMENTE um Array em formato JSON puro (sem markdown, sem crases como \`\`\`json). \nCada objeto do array deve ter os campos: "company" (string), "contact" (string), "email" (string), "phone" (string), "social" (string), "notes" (string). Se um dado não existir, deixe a string vazia "".\n\nTexto de entrada:\n${inputText}`;
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey.trim()}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
